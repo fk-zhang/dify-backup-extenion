@@ -1,0 +1,45 @@
+{
+  "manifest_version": 3,
+  "name": "Dify 应用配置备份工具",
+  "version": "1.0.0",
+  "description": "一键备份 Dify 工作空间的所有应用 DSL 配置为 YAML 文件并打包为 ZIP",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "scripting"
+  ],
+  "host_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["jszip.min.js", "backup-script.js", "page-context-helper.js"],
+      "matches": ["http://*/*", "https://*/*"]
+    }
+  ]
+}
+

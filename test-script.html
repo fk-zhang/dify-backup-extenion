@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>Dify 备份脚本测试</title>
+</head>
+<body>
+    <h1>Dify 备份脚本测试页面</h1>
+    <p>在浏览器控制台运行以下代码来测试备份脚本：</p>
+    <pre>
+// 1. 检查脚本状态
+checkDifyBackupStatus();
+
+// 2. 手动加载脚本（如果未加载）
+const script = document.createElement('script');
+script.src = chrome.runtime.getURL('backup-script.js');
+script.onload = () => {
+    console.log('脚本加载完成');
+    setTimeout(() => {
+        checkDifyBackupStatus();
+        if (window.difyBackup && window.difyBackup.backupAll) {
+            console.log('✅ 脚本初始化成功！');
+        } else {
+            console.error('❌ 脚本初始化失败');
+        }
+    }, 500);
+};
+script.onerror = (e) => {
+    console.error('脚本加载失败:', e);
+};
+document.head.appendChild(script);
+
+// 3. 检查脚本 URL
+console.log('脚本 URL:', chrome.runtime.getURL('backup-script.js'));
+    </pre>
+</body>
+</html>
+

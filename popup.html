@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dify 备份工具</title>
+    <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚀 Dify 备份工具</h1>
+            <p class="subtitle">一键备份工作空间 DSL 配置</p>
+        </div>
+
+        <div class="status" id="status">
+            <div class="status-item">
+                <span class="label">状态：</span>
+                <span class="value" id="statusText">就绪</span>
+            </div>
+            <div class="status-item">
+                <span class="label">当前页面：</span>
+                <span class="value" id="currentPage">-</span>
+            </div>
+        </div>
+
+        <div class="config-section">
+            <h3>⚙️ 配置选项</h3>
+            <div class="config-item">
+                <label>
+                    <input type="checkbox" id="includeSecrets">
+                    包含敏感信息（include_secret）
+                </label>
+            </div>
+            <div class="config-item">
+                <label>
+                    <input type="checkbox" id="includeWorkflowDraft">
+                    包含工作流草稿
+                </label>
+            </div>
+        </div>
+
+        <div class="action-section">
+            <button id="backupBtn" class="btn btn-primary">
+                📦 开始备份
+            </button>
+            <button id="backupCurrentBtn" class="btn btn-secondary">
+                📄 备份当前应用
+            </button>
+        </div>
+
+        <div class="progress-section" id="progressSection" style="display: none;">
+            <div class="progress-bar">
+                <div class="progress-fill" id="progressFill"></div>
+            </div>
+            <div class="progress-text" id="progressText">准备中...</div>
+        </div>
+
+        <div class="warning-section" id="warningSection" style="display: none;">
+            <h3>⚠️ 警告</h3>
+            <div class="warning-info" id="warningInfo"></div>
+        </div>
+
+        <div class="result-section" id="resultSection" style="display: none;">
+            <h3>✅ 备份完成</h3>
+            <div class="result-info" id="resultInfo"></div>
+        </div>
+
+        <div class="footer">
+            <div class="links">
+                <a href="#" id="helpLink">使用帮助</a>
+                <span>|</span>
+                <a href="#" id="settingsLink">设置</a>
+            </div>
+        </div>
+    </div>
+
+    <script src="popup.js"></script>
+</body>
+</html>
+
