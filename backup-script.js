@@ -251,6 +251,28 @@
         }
     }
     
+    // 获取当前工作空间信息
+    async function getCurrentWorkspace() {
+        try {
+            const data = await callDifyAPI('/console/api/workspaces/current');
+            
+            // 处理不同的响应格式
+            if (data && typeof data === 'object') {
+                // 直接返回数据对象，可能包含 name 字段
+                return data;
+            } else if (data.data && typeof data.data === 'object') {
+                return data.data;
+            } else if (data.workspace && typeof data.workspace === 'object') {
+                return data.workspace;
+            }
+            
+            return null;
+        } catch (error) {
+            console.error('获取当前工作空间信息失败:', error);
+            throw error;
+        }
+    }
+    
     // 获取应用列表（支持分页）
     async function getApplications(page = 1, limit = 30, allApps = []) {
         try {
@@ -373,8 +395,23 @@
             
             sendProgress(5, '获取工作空间信息...');
             
-            // 1. 获取工作空间信息（可选）
-            console.log('🏢 正在获取工作空间信息...');
+            // 1. 获取当前工作空间信息
+            console.log('🏢 正在获取当前工作空间信息...');
+            let currentWorkspace = null;
+            let workspaceName = 'workspace';
+            try {
+                currentWorkspace = await getCurrentWorkspace();
+                if (currentWorkspace && currentWorkspace.name) {
+                    workspaceName = currentWorkspace.name;
+                    console.log(`✅ 当前工作空间: ${workspaceName}`);
+                } else {
+                    console.warn('⚠️ 无法获取工作空间名称，使用默认名称');
+                }
+            } catch (e) {
+                console.warn('⚠️ 无法获取当前工作空间信息，使用默认名称:', e.message);
+            }
+            
+            // 获取所有工作空间信息（可选，用于兼容性）
             let workspaces = [];
             try {
                 const workspaceData = await getWorkspaces();
@@ -384,11 +421,10 @@
                     console.log(`✅ 找到 ${workspaces.length} 个工作空间`);
                 } else {
                     console.warn('⚠️ 工作空间数据格式异常:', workspaceData);
-                    console.log('实际返回的数据:', workspaceData);
                     workspaces = [];
                 }
             } catch (e) {
-                console.warn('⚠️ 无法获取工作空间列表，继续使用当前工作空间:', e.message);
+                console.warn('⚠️ 无法获取工作空间列表:', e.message);
                 workspaces = [];
             }
             
@@ -465,10 +501,9 @@
             });
             
             // 5. 生成并下载 ZIP 文件
-            const workspaceName = 'workspace';
-            //    ? sanitizeFileName(workspaces[0].name || 'workspace') 
-            //    : 'workspace';
-            const zipFileName = `${workspaceName}_${timestamp}.zip`;
+            // workspaceName 已在步骤1中从 /console/api/workspaces/current 接口获取
+            const safeWorkspaceName = sanitizeFileName(workspaceName);
+            const zipFileName = `${safeWorkspaceName}_${timestamp}.zip`;
             
             console.log(`\n📦 正在生成 ZIP 文件: ${zipFileName}...`);
             await downloadZip(zip, zipFileName);
@@ -482,7 +517,7 @@
             
             return {
                 success: true,
-                workspaceName: workspaceName,
+                workspaceName: safeWorkspaceName,
                 totalApps: apps.length,
                 successCount: successCount,
                 failedCount: failedCount,
