@@ -35,6 +35,11 @@
                         throw new Error('备份脚本未正确初始化');
                     }
                     result = await window.difyBackup.backupCurrent();
+                } else if (action === 'statisticsAllWorkflows') {
+                    if (!window.difyBackup || !window.difyBackup.statisticsAllWorkflows) {
+                        throw new Error('备份脚本未正确初始化');
+                    }
+                    result = await window.difyBackup.statisticsAllWorkflows(config || {});
                 } else {
                     throw new Error('未知的操作: ' + action);
                 }
@@ -66,6 +71,7 @@
                 isPlaceholder: window.difyBackup?._loading === true,
                 hasBackupAll: typeof window.difyBackup?.backupAll === 'function',
                 hasBackupCurrent: typeof window.difyBackup?.backupCurrent === 'function',
+                hasStatisticsAllWorkflows: typeof window.difyBackup?.statisticsAllWorkflows === 'function',
                 isInitialized: !!(window.difyBackup && typeof window.difyBackup === 'object' && 
                                window.difyBackup.backupAll && typeof window.difyBackup.backupAll === 'function' &&
                                !window.difyBackup._loading),

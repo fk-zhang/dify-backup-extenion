@@ -40,12 +40,36 @@
             </div>
         </div>
 
+        <div class="config-section" id="statisticsConfigSection">
+            <h3>📊 统计时间范围（可选）</h3>
+            <div class="config-item">
+                <label>
+                    <span class="label-text">开始时间：</span>
+                    <input type="datetime-local" id="startDate" style="width: 100%; margin-top: 5px;">
+                </label>
+            </div>
+            <div class="config-item">
+                <label>
+                    <span class="label-text">结束时间：</span>
+                    <input type="datetime-local" id="endDate" style="width: 100%; margin-top: 5px;">
+                </label>
+            </div>
+            <div class="config-item" style="margin-top: 10px;">
+                <button id="clearDateBtn" class="btn btn-secondary" style="width: 100%; font-size: 12px;">
+                    清除时间范围
+                </button>
+            </div>
+        </div>
+
         <div class="action-section">
             <button id="backupBtn" class="btn btn-primary">
                 📦 开始备份
             </button>
             <button id="backupCurrentBtn" class="btn btn-secondary">
                 📄 备份当前应用
+            </button>
+            <button id="statisticsBtn" class="btn btn-secondary">
+                📊 统计工作流使用情况
             </button>
         </div>
 

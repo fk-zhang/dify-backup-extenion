@@ -119,7 +119,7 @@
         for (let cookie of cookies) {
             const [name, value] = cookie.trim().split('=');
             // 常见的 CSRF token Cookie 名称
-            if (name === 'csrf_token' || name === 'csrf-token' || name === '__Host-csrf-token' ||
+            if (name === 'csrf_token' || name === 'csrf-token' || name === '__Host-csrf_token' || 
                 name === 'X-CSRF-Token' || name === '_csrf' ||
                 name === 'csrfToken' || name === 'CSRF-TOKEN') {
                 return decodeURIComponent(value);
@@ -334,6 +334,668 @@
         } catch (error) {
             console.warn(`获取工作流草稿失败 (${dslId}):`, error.message);
             return null;
+        }
+    }
+    
+    // 格式化时间为 ISO 8601 格式（用于 workflow-app-logs）
+    function formatDateTimeForWorkflowAPI(dateTimeStr) {
+        if (!dateTimeStr) return null;
+        // 输入格式：YYYY-MM-DD HH:MM
+        // 输出格式：YYYY-MM-DDTHH:MM:00+08:00 (ISO 8601 with timezone)
+        try {
+            const [datePart, timePart] = dateTimeStr.split(' ');
+            if (!datePart || !timePart) return null;
+            
+            // 获取当前时区偏移（小时）
+            const timezoneOffset = -new Date().getTimezoneOffset() / 60;
+            const timezoneSign = timezoneOffset >= 0 ? '+' : '-';
+            const timezoneHours = String(Math.abs(timezoneOffset)).padStart(2, '0');
+            const timezoneStr = `${timezoneSign}${timezoneHours}:00`;
+            
+            return `${datePart}T${timePart}:00${timezoneStr}`;
+        } catch (error) {
+            console.warn('时间格式转换失败:', error);
+            return null;
+        }
+    }
+    
+    // 获取应用的对话列表（支持分页和时间筛选）- 用于 chatflow/agent
+    async function getChatConversations(dslId, page = 1, limit = 100, startDate = null, endDate = null) {
+        try {
+            const params = new URLSearchParams({
+                page: page.toString(),
+                limit: limit.toString(),
+                sort_by: '-created_at',
+                annotation_status: 'all'
+            });
+            
+            // 添加时间筛选参数
+            // 格式：YYYY-MM-DD HH:MM，URLSearchParams 会自动编码为 YYYY-MM-DD+HH%3AMM
+            if (startDate) {
+                params.append('start', startDate);
+            }
+            if (endDate) {
+                params.append('end', endDate);
+            }
+            
+            const data = await callDifyAPI(`/console/api/apps/${dslId}/chat-conversations?${params}`);
+            return data;
+        } catch (error) {
+            console.error(`获取对话列表失败 (${dslId}):`, error);
+            throw error;
+        }
+    }
+    
+    // 获取工作流应用日志（支持分页和时间筛选）- 用于 workflow
+    async function getWorkflowAppLogs(dslId, page = 1, limit = 100, startDate = null, endDate = null) {
+        try {
+            const params = new URLSearchParams({
+                page: page.toString(),
+                limit: limit.toString()
+            });
+            
+            // 添加时间筛选参数（ISO 8601 格式）
+            if (startDate) {
+                const formattedStart = formatDateTimeForWorkflowAPI(startDate);
+                if (formattedStart) {
+                    params.append('created_at__after', formattedStart);
+                }
+            }
+            if (endDate) {
+                const formattedEnd = formatDateTimeForWorkflowAPI(endDate);
+                if (formattedEnd) {
+                    params.append('created_at__before', formattedEnd);
+                }
+            }
+            
+            const data = await callDifyAPI(`/console/api/apps/${dslId}/workflow-app-logs?${params}`);
+            return data;
+        } catch (error) {
+            console.error(`获取工作流日志失败 (${dslId}):`, error);
+            throw error;
+        }
+    }
+    
+    // 获取文本生成对话列表（支持分页和时间筛选）- 用于 completion
+    async function getCompletionConversations(dslId, page = 1, limit = 100, startDate = null, endDate = null) {
+        try {
+            const params = new URLSearchParams({
+                page: page.toString(),
+                limit: limit.toString(),
+                sort_by: '-created_at',
+                annotation_status: 'all'
+            });
+            
+            // 添加时间筛选参数
+            // 格式：YYYY-MM-DD HH:MM，URLSearchParams 会自动编码为 YYYY-MM-DD+HH%3AMM
+            if (startDate) {
+                params.append('start', startDate);
+            }
+            if (endDate) {
+                params.append('end', endDate);
+            }
+            
+            const data = await callDifyAPI(`/console/api/apps/${dslId}/completion-conversations?${params}`);
+            return data;
+        } catch (error) {
+            console.error(`获取文本生成对话列表失败 (${dslId}):`, error);
+            throw error;
+        }
+    }
+    
+    // 获取所有对话记录（用于统计用户覆盖数）- 用于 chatflow/agent
+    async function getAllChatConversations(dslId, limit = 100, startDate = null, endDate = null) {
+        let allConversations = [];
+        let page = 1;
+        let hasMore = true;
+        let total = 0;
+        
+        while (hasMore) {
+            try {
+                const data = await getChatConversations(dslId, page, limit, startDate, endDate);
+                
+                // 获取总对话数（只在第一页获取）
+                if (page === 1) {
+                    total = data.total || 0;
+                }
+                
+                // 获取对话列表
+                const conversations = data.data || [];
+                allConversations = allConversations.concat(conversations);
+                
+                // 检查是否还有更多
+                hasMore = data.has_more || false;
+                
+                // 如果已经获取了所有对话，停止
+                if (allConversations.length >= total) {
+                    hasMore = false;
+                }
+                
+                page++;
+                
+                // 避免请求过快
+                await new Promise(resolve => setTimeout(resolve, 200));
+            } catch (error) {
+                console.warn(`获取第 ${page} 页对话失败 (${dslId}):`, error.message);
+                // 如果第一页就失败，返回已获取的数据
+                break;
+            }
+        }
+        
+        return {
+            total: total,
+            conversations: allConversations
+        };
+    }
+    
+    // 获取所有工作流日志（用于统计用户覆盖数）- 用于 workflow
+    async function getAllWorkflowAppLogs(dslId, limit = 100, startDate = null, endDate = null) {
+        let allLogs = [];
+        let page = 1;
+        let hasMore = true;
+        let total = 0;
+        
+        while (hasMore) {
+            try {
+                const data = await getWorkflowAppLogs(dslId, page, limit, startDate, endDate);
+                
+                // 获取总日志数（只在第一页获取）
+                if (page === 1) {
+                    total = data.total || data.count || 0;
+                }
+                
+                // 获取日志列表
+                const logs = data.data || data.items || [];
+                allLogs = allLogs.concat(logs);
+                
+                // 检查是否还有更多
+                hasMore = data.has_more !== false && logs.length === limit;
+                
+                // 如果已经获取了所有日志，停止
+                if (total > 0 && allLogs.length >= total) {
+                    hasMore = false;
+                }
+                
+                // 如果没有更多数据，停止
+                if (logs.length === 0) {
+                    hasMore = false;
+                }
+                
+                page++;
+                
+                // 避免请求过快
+                await new Promise(resolve => setTimeout(resolve, 200));
+            } catch (error) {
+                console.warn(`获取第 ${page} 页工作流日志失败 (${dslId}):`, error.message);
+                // 如果第一页就失败，返回已获取的数据
+                break;
+            }
+        }
+        
+        return {
+            total: total,
+            logs: allLogs
+        };
+    }
+    
+    // 获取所有文本生成对话记录（用于统计用户覆盖数）- 用于 completion
+    async function getAllCompletionConversations(dslId, limit = 100, startDate = null, endDate = null) {
+        let allConversations = [];
+        let page = 1;
+        let hasMore = true;
+        let total = 0;
+        
+        while (hasMore) {
+            try {
+                const data = await getCompletionConversations(dslId, page, limit, startDate, endDate);
+                
+                // 获取总对话数（只在第一页获取）
+                if (page === 1) {
+                    total = data.total || 0;
+                }
+                
+                // 获取对话列表
+                const conversations = data.data || [];
+                allConversations = allConversations.concat(conversations);
+                
+                // 检查是否还有更多
+                hasMore = data.has_more || false;
+                
+                // 如果已经获取了所有对话，停止
+                if (allConversations.length >= total) {
+                    hasMore = false;
+                }
+                
+                page++;
+                
+                // 避免请求过快
+                await new Promise(resolve => setTimeout(resolve, 200));
+            } catch (error) {
+                console.warn(`获取第 ${page} 页文本生成对话失败 (${dslId}):`, error.message);
+                // 如果第一页就失败，返回已获取的数据
+                break;
+            }
+        }
+        
+        return {
+            total: total,
+            conversations: allConversations
+        };
+    }
+    
+    // 检测应用类型（chatflow/agent、workflow 或 completion）
+    async function detectAppType(dslId) {
+        let chatflowError = null;
+        let workflowError = null;
+        let completionError = null;
+        
+        // 先尝试获取 chat-conversations（chatflow/agent 类型）
+        try {
+            const chatData = await getChatConversations(dslId, 1, 1);
+            if (chatData && (chatData.total !== undefined || chatData.data !== undefined)) {
+                console.log(`✅ 检测到应用类型: chatflow (通过 chat-conversations)`);
+                return 'chatflow';
+            }
+        } catch (error) {
+            chatflowError = error;
+            console.log(`⚠️ chat-conversations 接口失败: ${error.message}`);
+        }
+        
+        // 尝试获取 completion-conversations（completion 类型）
+        try {
+            const completionData = await getCompletionConversations(dslId, 1, 1);
+            if (completionData && (completionData.total !== undefined || completionData.data !== undefined)) {
+                console.log(`✅ 检测到应用类型: completion (通过 completion-conversations)`);
+                return 'completion';
+            }
+        } catch (error) {
+            completionError = error;
+            console.log(`⚠️ completion-conversations 接口失败: ${error.message}`);
+        }
+        
+        // 尝试获取 workflow-app-logs（workflow 类型）
+        try {
+            const workflowData = await getWorkflowAppLogs(dslId, 1, 1);
+            if (workflowData && (workflowData.total !== undefined || workflowData.data !== undefined || workflowData.items !== undefined)) {
+                console.log(`✅ 检测到应用类型: workflow (通过 workflow-app-logs)`);
+                return 'workflow';
+            }
+        } catch (error) {
+            workflowError = error;
+            console.log(`⚠️ workflow-app-logs 接口失败: ${error.message}`);
+        }
+        
+        // 如果所有接口都失败，根据错误信息判断
+        // 如果 chat-conversations 返回 404，可能是其他类型
+        if (chatflowError && chatflowError.message && chatflowError.message.includes('404')) {
+            // 如果 completion-conversations 也返回 404，可能是 workflow
+            if (completionError && completionError.message && completionError.message.includes('404')) {
+                console.log(`⚠️ chat-conversations 和 completion-conversations 都返回 404，尝试使用 workflow 类型`);
+                return 'workflow';
+            }
+            // 如果 completion-conversations 成功，返回 completion
+            if (!completionError) {
+                return 'completion';
+            }
+        }
+        
+        // 如果 completion-conversations 返回 404，可能是 chatflow 或 workflow
+        if (completionError && completionError.message && completionError.message.includes('404')) {
+            // 如果 workflow-app-logs 也返回 404，可能是 chatflow
+            if (workflowError && workflowError.message && workflowError.message.includes('404')) {
+                console.log(`⚠️ completion-conversations 和 workflow-app-logs 都返回 404，使用 chatflow 类型`);
+                return 'chatflow';
+            }
+        }
+        
+        // 默认返回 chatflow（向后兼容）
+        console.log(`⚠️ 无法确定应用类型，默认使用 chatflow`);
+        return 'chatflow';
+    }
+    
+    // 统计工作流使用情况（自动检测应用类型）
+    async function getWorkflowStatistics(dslId, appName = '', startDate = null, endDate = null, appMode = null) {
+        try {
+            const timeRange = startDate && endDate ? ` (${startDate} 至 ${endDate})` : '';
+            console.log(`📊 正在统计工作流 ${appName || dslId} (${dslId}) 的使用情况${timeRange}...`);
+            
+            // 检测应用类型
+            let appType = appMode;
+            if (!appType) {
+                appType = await detectAppType(dslId);
+            }
+            
+            console.log(`📊 检测到应用类型: ${appType}`);
+            
+            if (appType === 'workflow') {
+                // 使用 workflow-app-logs 接口
+                return await getWorkflowStatisticsFromLogs(dslId, appName, startDate, endDate);
+            } else if (appType === 'completion') {
+                // 使用 completion-conversations 接口
+                return await getWorkflowStatisticsFromCompletion(dslId, appName, startDate, endDate);
+            } else {
+                // 使用 chat-conversations 接口（默认，兼容 chatflow/agent）
+                return await getWorkflowStatisticsFromConversations(dslId, appName, startDate, endDate);
+            }
+        } catch (error) {
+            console.error(`统计工作流 ${appName || dslId} (${dslId}) 失败:`, error);
+            return {
+                dslId: dslId,
+                totalUsage: 0,
+                userCoverage: 0,
+                error: error.message
+            };
+        }
+    }
+    
+    // 从对话记录统计（chatflow/agent）
+    async function getWorkflowStatisticsFromConversations(dslId, appName = '', startDate = null, endDate = null) {
+        try {
+            // 获取第一页数据以获取 total
+            const firstPage = await getChatConversations(dslId, 1, 1, startDate, endDate);
+            const total = firstPage.total || 0;
+            
+            // 如果 total 为 0，直接返回
+            if (total === 0) {
+                console.log(`✅ 工作流 ${appName || dslId} 统计完成: 总使用数=0, 用户覆盖数=0`);
+                return {
+                    dslId: dslId,
+                    totalUsage: 0,
+                    userCoverage: 0
+                };
+            }
+            
+            console.log(`📊 工作流 ${appName || dslId} 共有 ${total} 条对话记录，正在获取所有记录以统计用户覆盖数...`);
+            
+            // 获取所有对话记录以统计用户覆盖数
+            const { conversations } = await getAllChatConversations(dslId, 100, startDate, endDate);
+            
+            // 统计用户覆盖数
+            // 优先使用 from_account_name 去重，如果 from_account_name 为 null 则使用 from_end_user_session_id
+            // 每个工作流只能使用一个字段属性去重
+            const userSet = new Set();
+            
+            // 先检查是否有 from_account_name 不为 null 的记录
+            const hasAccountName = conversations.some(conv => conv.from_account_name !== null && conv.from_account_name !== undefined);
+            
+            if (hasAccountName) {
+                // 如果有 from_account_name 不为 null 的记录，统一使用 from_account_name 去重
+                conversations.forEach(conv => {
+                    if (conv.from_account_name) {
+                        userSet.add(conv.from_account_name);
+                    }
+                });
+            } else {
+                // 如果所有记录的 from_account_name 都为 null，使用 from_end_user_session_id 去重
+                conversations.forEach(conv => {
+                    if (conv.from_end_user_session_id) {
+                        userSet.add(conv.from_end_user_session_id);
+                    }
+                });
+            }
+            
+            const userCoverage = userSet.size;
+            
+            console.log(`✅ 工作流 ${appName || dslId} 统计完成: 总使用数=${total}, 用户覆盖数=${userCoverage}`);
+            
+            return {
+                dslId: dslId,
+                totalUsage: total,
+                userCoverage: userCoverage
+            };
+        } catch (error) {
+            throw error;
+        }
+    }
+    
+    // 从工作流日志统计（workflow）
+    async function getWorkflowStatisticsFromLogs(dslId, appName = '', startDate = null, endDate = null) {
+        try {
+            // 获取第一页数据以获取 total
+            const firstPage = await getWorkflowAppLogs(dslId, 1, 1, startDate, endDate);
+            const total = firstPage.total || firstPage.count || 0;
+            
+            // 如果 total 为 0，直接返回
+            if (total === 0) {
+                console.log(`✅ 工作流 ${appName || dslId} 统计完成: 总使用数=0, 用户覆盖数=0`);
+                return {
+                    dslId: dslId,
+                    totalUsage: 0,
+                    userCoverage: 0
+                };
+            }
+            
+            console.log(`📊 工作流 ${appName || dslId} 共有 ${total} 条日志记录，正在获取所有记录以统计用户覆盖数...`);
+            
+            // 获取所有日志记录以统计用户覆盖数
+            const { logs } = await getAllWorkflowAppLogs(dslId, 100, startDate, endDate);
+            
+            // 统计用户覆盖数
+            // 优先使用 created_by_account.name 去重，如果为 null，使用 created_by_end_user.session_id 去重
+            // 每个工作流只使用一个字段去重
+            const userSet = new Set();
+            
+            // 先检查是否有 created_by_account.name 不为 null 的记录
+            const hasAccountName = logs.some(log => 
+                log.created_by_account && 
+                log.created_by_account.name !== null && 
+                log.created_by_account.name !== undefined
+            );
+            
+            if (hasAccountName) {
+                // 如果有 created_by_account.name 不为 null 的记录，统一使用 created_by_account.name 去重
+                logs.forEach(log => {
+                    if (log.created_by_account && log.created_by_account.name) {
+                        userSet.add(log.created_by_account.name);
+                    }
+                });
+            } else {
+                // 如果所有记录的 created_by_account.name 都为 null，使用 created_by_end_user.session_id 去重
+                logs.forEach(log => {
+                    if (log.created_by_end_user && log.created_by_end_user.session_id) {
+                        userSet.add(log.created_by_end_user.session_id);
+                    }
+                });
+            }
+            
+            const userCoverage = userSet.size;
+            
+            console.log(`✅ 工作流 ${appName || dslId} 统计完成: 总使用数=${total}, 用户覆盖数=${userCoverage}`);
+            
+            return {
+                dslId: dslId,
+                totalUsage: total,
+                userCoverage: userCoverage
+            };
+        } catch (error) {
+            throw error;
+        }
+    }
+    
+    // 从文本生成对话统计（completion）
+    async function getWorkflowStatisticsFromCompletion(dslId, appName = '', startDate = null, endDate = null) {
+        try {
+            // 获取第一页数据以获取 total
+            const firstPage = await getCompletionConversations(dslId, 1, 1, startDate, endDate);
+            const total = firstPage.total || 0;
+            
+            // 如果 total 为 0，直接返回
+            if (total === 0) {
+                console.log(`✅ 工作流 ${appName || dslId} 统计完成: 总使用数=0, 用户覆盖数=0`);
+                return {
+                    dslId: dslId,
+                    totalUsage: 0,
+                    userCoverage: 0
+                };
+            }
+            
+            console.log(`📊 工作流 ${appName || dslId} 共有 ${total} 条对话记录，正在获取所有记录以统计用户覆盖数...`);
+            
+            // 获取所有对话记录以统计用户覆盖数
+            const { conversations } = await getAllCompletionConversations(dslId, 100, startDate, endDate);
+            
+            // 统计用户覆盖数（使用 from_account_name 去重）
+            const userSet = new Set();
+            conversations.forEach(conv => {
+                // completion-conversations 使用 from_account_name 字段
+                if (conv.from_account_name) {
+                    userSet.add(conv.from_account_name);
+                }
+            });
+            
+            const userCoverage = userSet.size;
+            
+            console.log(`✅ 工作流 ${appName || dslId} 统计完成: 总使用数=${total}, 用户覆盖数=${userCoverage}`);
+            
+            return {
+                dslId: dslId,
+                totalUsage: total,
+                userCoverage: userCoverage
+            };
+        } catch (error) {
+            throw error;
+        }
+    }
+    
+    // 统计所有工作空间的工作流使用情况
+    async function statisticsAllWorkflows(config = {}) {
+        const finalConfig = { ...defaultConfig, ...config };
+        
+        // 获取时间范围参数
+        const startDate = config.startDate || null;
+        const endDate = config.endDate || null;
+        
+        try {
+            const timeRange = startDate && endDate ? ` (${startDate} 至 ${endDate})` : '';
+            console.log(`📊 开始统计工作流使用情况${timeRange}...`);
+            
+            sendProgress(5, '获取工作空间信息...');
+            
+            // 1. 获取当前工作空间信息
+            let currentWorkspace = null;
+            let workspaceName = 'workspace';
+            try {
+                currentWorkspace = await getCurrentWorkspace();
+                if (currentWorkspace && currentWorkspace.name) {
+                    workspaceName = currentWorkspace.name;
+                    console.log(`✅ 当前工作空间: ${workspaceName}`);
+                }
+            } catch (e) {
+                console.warn('⚠️ 无法获取当前工作空间信息:', e.message);
+            }
+            
+            sendProgress(10, '获取应用列表...');
+            
+            // 2. 获取应用列表
+            const apps = await getApplications(1, finalConfig.pageLimit);
+            console.log(`✅ 找到 ${apps.length} 个应用`);
+            
+            if (apps.length === 0) {
+                throw new Error('当前工作空间没有应用，无法统计');
+            }
+            
+            sendProgress(15, `开始统计 ${apps.length} 个工作流...`);
+            
+            // 3. 统计每个工作流
+            const statistics = [];
+            let successCount = 0;
+            let failedCount = 0;
+            
+            for (let i = 0; i < apps.length; i++) {
+                const app = apps[i];
+                const dslId = app.dsl_id || app.id || app.app_id;
+                const appName = app.name || app.app_name || dslId;
+                const appMode = app.mode || app.app_mode || null; // 尝试从应用数据中获取类型
+                
+                const progress = 15 + Math.floor((i / apps.length) * 80);
+                sendProgress(progress, `统计中: ${appName} (${i + 1}/${apps.length})`);
+                
+                console.log(`📊 [${i + 1}/${apps.length}] 正在统计: ${appName} (DSL ID: ${dslId}, Mode: ${appMode || 'auto-detect'})`);
+                
+                try {
+                    const stats = await getWorkflowStatistics(dslId, appName, startDate, endDate, appMode);
+                    statistics.push({
+                        appName: appName,
+                        dslId: dslId,
+                        appMode: appMode || 'auto-detected',
+                        ...stats
+                    });
+                    successCount++;
+                } catch (error) {
+                    console.error(`❌ ${appName} 统计失败:`, error.message);
+                    statistics.push({
+                        appName: appName,
+                        dslId: dslId,
+                        appMode: appMode || 'unknown',
+                        totalUsage: 0,
+                        userCoverage: 0,
+                        error: error.message
+                    });
+                    failedCount++;
+                }
+                
+                // 避免请求过快
+                await new Promise(resolve => setTimeout(resolve, 300));
+            }
+            
+            sendProgress(95, '生成统计报告...');
+            
+            // 4. 生成统计报告
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+            const safeWorkspaceName = sanitizeFileName(workspaceName);
+            
+            // 生成 CSV 格式的统计报告
+            let csvContent = '工作流名称,DSL ID,应用类型,总使用数,用户覆盖数\n';
+            statistics.forEach(stat => {
+                const appName = (stat.appName || '').replace(/"/g, '""');
+                const dslId = stat.dslId || '';
+                const appMode = stat.appMode || 'unknown';
+                const totalUsage = stat.totalUsage || 0;
+                const userCoverage = stat.userCoverage || 0;
+                csvContent += `"${appName}","${dslId}","${appMode}",${totalUsage},${userCoverage}\n`;
+            });
+            
+            // 下载 CSV 文件
+            const csvFileName = `${safeWorkspaceName}_statistics_${timestamp}.csv`;
+            const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' }); // 添加 BOM 以支持 Excel 中文显示
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = csvFileName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            sendProgress(100, '完成！');
+            
+            // 计算总计
+            const totalUsage = statistics.reduce((sum, stat) => sum + (stat.totalUsage || 0), 0);
+            const totalUserCoverage = new Set();
+            statistics.forEach(stat => {
+                // 注意：这里无法跨工作流统计用户覆盖数，因为每个工作流的用户是独立的
+                // 如果需要跨工作流的用户覆盖数，需要额外的逻辑
+            });
+            
+            console.log(`\n✅ 统计完成！`);
+            console.log(`📊 统计结果: 总计 ${apps.length} 个工作流，成功 ${successCount} 个，失败 ${failedCount} 个`);
+            console.log(`📈 总使用数: ${totalUsage}`);
+            console.log(`💾 CSV 文件已下载: ${csvFileName}`);
+            
+            return {
+                success: true,
+                workspaceName: safeWorkspaceName,
+                totalWorkflows: apps.length,
+                successCount: successCount,
+                failedCount: failedCount,
+                totalUsage: totalUsage,
+                statistics: statistics,
+                csvFileName: csvFileName
+            };
+            
+        } catch (error) {
+            console.error('❌ 统计过程出错:', error);
+            throw error;
         }
     }
     
@@ -572,6 +1234,7 @@
         Object.assign(window.difyBackup, {
             backupAll,
             backupCurrent,
+            statisticsAllWorkflows,
             loadJSZip,
             _loading: false,
             _error: null
@@ -595,6 +1258,7 @@
         Object.assign(window.difyBackup, {
             backupAll: async () => { throw new Error('备份脚本初始化失败: ' + error.message); },
             backupCurrent: async () => { throw new Error('备份脚本初始化失败: ' + error.message); },
+            statisticsAllWorkflows: async () => { throw new Error('备份脚本初始化失败: ' + error.message); },
             loadJSZip: async () => { throw new Error('备份脚本初始化失败: ' + error.message); },
             _loading: false,
             _error: error.message
@@ -607,6 +1271,7 @@
         window.difyBackup = {
             backupAll: async () => { throw new Error('备份脚本严重错误：window.difyBackup 未定义'); },
             backupCurrent: async () => { throw new Error('备份脚本严重错误：window.difyBackup 未定义'); },
+            statisticsAllWorkflows: async () => { throw new Error('备份脚本严重错误：window.difyBackup 未定义'); },
             loadJSZip: async () => { throw new Error('备份脚本严重错误：window.difyBackup 未定义'); }
         };
     }

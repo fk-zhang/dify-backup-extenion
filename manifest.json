@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Dify 应用配置备份工具",
-  "version": "1.0.0",
+  "version": "1.0.3",
   "description": "一键备份 Dify 工作空间的所有应用 DSL 配置为 YAML 文件并打包为 ZIP",
   "permissions": [
     "activeTab",

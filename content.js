@@ -68,6 +68,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             sendResponse({ success: false, error: error.message });
         });
         return true;
+    } else if (request.action === 'statisticsWorkflows') {
+        handleStatisticsWorkflows(request.config).then(result => {
+            sendResponse(result);
+        }).catch(error => {
+            console.error('统计失败:', error);
+            sendResponse({ success: false, error: error.message });
+        });
+        return true;
     }
     return false;
 });
@@ -146,6 +154,16 @@ async function handleBackupCurrent() {
     
     // 在页面上下文中执行备份
     return await executeInPageContext('backupCurrent', null);
+}
+
+// 统计工作流使用情况
+async function handleStatisticsWorkflows(config) {
+    // 先加载页面上下文辅助脚本和备份脚本
+    await loadPageContextHelper();
+    await loadBackupScript();
+    
+    // 在页面上下文中执行统计
+    return await executeInPageContext('statisticsAllWorkflows', config);
 }
 
 // 在页面上下文中检查备份脚本状态（使用 postMessage）
